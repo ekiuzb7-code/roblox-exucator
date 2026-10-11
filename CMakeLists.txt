@@ -26,12 +26,26 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# Find dependencies via vcpkg
-find_package(fmt REQUIRED)
-find_package(spdlog REQUIRED)
+# Find dependencies via vcpkg (allow both static and dynamic triplet)
+find_package(fmt QUIET)
+find_package(spdlog QUIET)
 
-# DirectX 11 for ImGui backend
-find_package(DirectX REQUIRED)
+if (NOT fmt_FOUND)
+    message(WARNING "fmt not found via vcpkg, trying find_package fallback")
+    find_package(fmt REQUIRED)
+endif()
+
+if (NOT spdlog_FOUND)
+    message(WARNING "spdlog not found via vcpkg, trying find_package fallback")
+    find_package(spdlog REQUIRED)
+endif()
+
+# DirectX 11 for ImGui backend (optional - use system if not found)
+find_package(DirectX QUIET)
+if (NOT DirectX_FOUND)
+    message(WARNING "DirectX SDK not found, using system headers/libs")
+    # We'll link d3d11.lib/dxgi.lib directly
+endif()
 
 # Luau - try to find via vcpkg, fallback to submodule
 find_path(LUAU_INCLUDE_DIR luau.h

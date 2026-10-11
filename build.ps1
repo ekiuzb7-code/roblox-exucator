@@ -70,7 +70,11 @@ if (-not (Test-Path "$VcpkgDir\vcpkg.exe")) {
 # Install dependencies
 Write-Header "Installing dependencies"
 & "$VcpkgDir\vcpkg.exe" install fmt spdlog --triplet x64-windows-static
-if ($LASTEXITCODE -ne 0) { Write-Warning "vcpkg install had issues, continuing..." }
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Static triplet failed, trying dynamic..."
+    & "$VcpkgDir\vcpkg.exe" install fmt spdlog --triplet x64-windows
+    if ($LASTEXITCODE -ne 0) { Write-Warning "vcpkg install had issues, continuing..." }
+}
 
 # Build Luau from source
 Write-Header "Building Luau"
