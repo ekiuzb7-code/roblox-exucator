@@ -1,0 +1,54 @@
+# Build directories
+build/
+third_party/luau/build/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# vcpkg
+vcpkg/
+vcpkg_installed/
+
+# Artifacts
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.obj
+*.idb
+*.ncb
+*.suo
+*.user
+*.aps
+
+# Benchmarks
+bench_results.json
+*.bin
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Release packages
+release/
+*.zip
+*.msi
+
+# Logs
+*.log
+spdlog.txt
+
+# Test files
+test.lua

@@ -1,0 +1,26 @@
+{
+  "name": "roblox-executor",
+  "version": "1.0.0",
+  "description": "Roblox Luau Executor with UNC/sUNC support",
+  "homepage": "https://github.com/yourusername/roblox-executor",
+  "license": "MIT",
+  "dependencies": [
+    "fmt",
+    "spdlog",
+    {
+      "name": "luau",
+      "version>=": "0.6.0"
+    }
+  ],
+  "builtin-baseline": "d8b5c8f2e8b9c4a3f2e1d0c9b8a7f6e5d4c3b2a1",
+  "overrides": [
+    {
+      "name": "fmt",
+      "version": "10.2.1"
+    },
+    {
+      "name": "spdlog",
+      "version": "1.12.0"
+    }
+  ]
+}

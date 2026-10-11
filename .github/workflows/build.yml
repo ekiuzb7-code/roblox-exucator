@@ -1,0 +1,221 @@
+name: Build Roblox Executor
+
+on:
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'Release'
+        type: choice
+        options: [Debug, Release, RelWithDebInfo]
+
+env:
+  BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
+jobs:
+  build:
+    name: Build (${{ matrix.config.name }})
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 2022 x64 Release"
+            os: windows-2022
+            arch: x64
+            build_type: Release
+          - name: "Windows 2022 x64 RelWithDebInfo"
+            os: windows-2022
+            arch: x64
+            build_type: RelWithDebInfo
+          - name: "Windows 2025 x64 Release"
+            os: windows-2025
+            arch: x64
+            build_type: Release
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ env.VCPKG_ROOT }}
+          ${{ env.VCPKG_ROOT }}/installed
+          ~\AppData\Local\vcpkg\archives
+        key: vcpkg-${{ runner.os }}-${{ matrix.config.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ matrix.config.arch }}-
+
+    - name: Bootstrap vcpkg
+      run: |
+        if not exist "%VCPKG_ROOT%\vcpkg.exe" (
+          git clone https://github.com/microsoft/vcpkg "%VCPKG_ROOT%"
+          "%VCPKG_ROOT%\bootstrap-vcpkg.bat" -disableMetrics
+        )
+
+    - name: Install dependencies
+      run: |
+        "%VCPKG_ROOT%\vcpkg" install fmt spdlog --triplet x64-windows-static
+        "%VCPKG_ROOT%\vcpkg" install luau --triplet x64-windows-static
+      # Note: luau may not be in vcpkg registry yet - fallback to submodule
+
+    - name: Build Luau from submodule (fallback)
+      if: always()
+      run: |
+        if not exist "third_party\luau\CMakeLists.txt" (
+          git submodule update --init --recursive third_party/luau
+        )
+        cmake -B third_party/luau/build -S third_party/luau -DCMAKE_BUILD_TYPE=%BUILD_TYPE% -DCMAKE_CXX_FLAGS="/MT" -DBUILD_TESTS=OFF
+        cmake --build third_party/luau/build --config %BUILD_TYPE% --parallel
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . ^
+          -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
+          -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+          -DLUAU_INCLUDE_DIR="%CD%\third_party\luau\include" ^
+          -DLUAU_LIBRARY="%CD%\third_party\luau\build\%BUILD_TYPE%\luau.lib"
+
+    - name: Build
+      run: |
+        cmake --build build --config %BUILD_TYPE% --parallel
+
+    - name: Run Self-Tests
+      run: |
+        build\%BUILD_TYPE%\executor.exe --self-test
+
+    - name: Run Benchmarks
+      run: |
+        build\%BUILD_TYPE%\benchmark.exe --unc --file "\\localhost\C$\temp\executor_bench.bin"
+        build\%BUILD_TYPE%\benchmark.exe --luau
+        build\%BUILD_TYPE%\benchmark.exe --inject
+        build\%BUILD_TYPE%\benchmark.exe --ipc
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: executor-${{ matrix.config.build_type }}-${{ matrix.config.arch }}-${{ matrix.config.os }}
+        path: |
+          build/${{ env.BUILD_TYPE }}/executor.exe
+          build/${{ env.BUILD_TYPE }}/injector.dll
+          build/${{ env.BUILD_TYPE }}/benchmark.exe
+          build/${{ env.BUILD_TYPE }}/roblox_executor_gui.exe
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Create Release Package
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      run: |
+        mkdir release
+        copy build\%BUILD_TYPE%\executor.exe release\
+        copy build\%BUILD_TYPE%\injector.dll release\
+        copy build\%BUILD_TYPE%\benchmark.exe release\
+        copy build\%BUILD_TYPE%\roblox_executor_gui.exe release\
+        copy LICENSE release\ 2>nul || echo No license
+        copy README.md release\ 2>nul || echo No readme
+        powershell -Command "Compress-Archive -Path release\* -DestinationPath RobloxExecutor-${{ github.ref_name }}-x64.zip -Force"
+
+    - name: Upload Release Asset
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: RobloxExecutor-${{ github.ref_name }}-x64.zip
+        generate_release_notes: true
+
+  # Separate job for static analysis
+  analyze:
+    name: Static Analysis
+    runs-on: windows-2022
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Run Cppcheck
+      run: |
+        choco install cppcheck -y --no-progress
+        cppcheck --enable=all --std=c++20 --inline-suppr --suppress=missingIncludeSystem \
+          --suppress=unmatchedSuppression --quiet src/
+
+    - name: Run MSVC Analyze
+      run: |
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="/analyze"
+        cmake --build build --config Release --target executor -- /p:RunCodeAnalysis=true
+
+  # Test on multiple Windows versions
+  test-matrix:
+    name: Test Matrix
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: executor-Release-x64-windows-2022
+        path: artifacts
+
+    - name: Smoke Test
+      run: |
+        artifacts\executor.exe --version
+        artifacts\executor.exe --self-test
+
+    - name: UNC Test (local)
+      run: |
+        mkdir C:\temp 2>nul
+        artifacts\executor.exe --bench unc --file "\\localhost\C$\temp\executor_test.bin"
+
+    - name: Luau Test
+      run: |
+        echo "print('hello from luau')" > test.lua
+        artifacts\executor.exe --execute test.lua
+
+  # Code signing (placeholder - requires cert)
+  sign:
+    name: Code Sign
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-2022
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: executor-Release-x64-windows-2022
+        path: artifacts
+
+    - name: Sign Executables
+      run: |
+        # Placeholder - requires code signing certificate
+        # signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 artifacts\executor.exe
+        # signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 artifacts\injector.dll
+        echo "Code signing step - configure with your certificate"
+        ls artifacts\
+
+    - name: Verify Signatures
+      run: |
+        # signtool verify /pa artifacts\executor.exe
+        echo "Verification step"
