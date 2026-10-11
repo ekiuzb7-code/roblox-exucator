@@ -72,12 +72,15 @@ Write-Header "Installing dependencies"
 & "$VcpkgDir\vcpkg.exe" install fmt spdlog --triplet x64-windows-static
 if ($LASTEXITCODE -ne 0) { Write-Warning "vcpkg install had issues, continuing..." }
 
-# Build Luau submodule
-Write-Header "Building Luau submodule"
+# Build Luau from source
+Write-Header "Building Luau"
 if (-not (Test-Path "$LuauDir\CMakeLists.txt")) {
-    Write-Info "Initializing Luau submodule..."
-    git submodule update --init --recursive $LuauDir
-    if ($LASTEXITCODE -ne 0) { Write-Error "Failed to init Luau submodule"; exit $LASTEXITCODE }
+    Write-Info "Cloning Luau..."
+    New-Item -ItemType Directory -Path $ThirdPartyDir -Force | Out-Null
+    Set-Location $ThirdPartyDir
+    git clone --depth 1 --branch 0.6.3 https://github.com/luau-lang/luau.git
+    Set-Location $ProjectDir
+    if ($LASTEXITCODE -ne 0) { Write-Error "Failed to clone Luau"; exit $LASTEXITCODE }
 }
 
 $LuauBuildDir = Join-Path $LuauDir 'build'

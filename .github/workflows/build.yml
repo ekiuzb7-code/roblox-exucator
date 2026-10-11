@@ -75,15 +75,16 @@ jobs:
     - name: Install dependencies
       run: |
         "%VCPKG_ROOT%\vcpkg" install fmt spdlog --triplet x64-windows-static
-        "%VCPKG_ROOT%\vcpkg" install luau --triplet x64-windows-static
-      # Note: luau may not be in vcpkg registry yet - fallback to submodule
+      # luau not in vcpkg registry - build from source
 
-    - name: Build Luau from submodule (fallback)
-      if: always()
+    - name: Fetch Luau source
       run: |
-        if not exist "third_party\luau\CMakeLists.txt" (
-          git submodule update --init --recursive third_party/luau
-        )
+        mkdir third_party
+        cd third_party
+        git clone --depth 1 --branch 0.6.3 https://github.com/luau-lang/luau.git
+
+    - name: Build Luau
+      run: |
         cmake -B third_party/luau/build -S third_party/luau -DCMAKE_BUILD_TYPE=%BUILD_TYPE% -DCMAKE_CXX_FLAGS="/MT" -DBUILD_TESTS=OFF
         cmake --build third_party/luau/build --config %BUILD_TYPE% --parallel
 
@@ -155,8 +156,7 @@ jobs:
     - name: Run Cppcheck
       run: |
         choco install cppcheck -y --no-progress
-        cppcheck --enable=all --std=c++20 --inline-suppr --suppress=missingIncludeSystem \
-          --suppress=unmatchedSuppression --quiet src/
+        cppcheck --enable=all --std=c++20 --inline-suppr --suppress=missingIncludeSystem --suppress=unmatchedSuppression --quiet src/
 
     - name: Run MSVC Analyze
       run: |

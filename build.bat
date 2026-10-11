@@ -39,13 +39,16 @@ if errorlevel 1 (
     echo Warning: vcpkg install failed, continuing...
 )
 
-REM Build Luau from submodule
-echo Building Luau submodule...
+REM Build Luau from source (not submodule)
+echo Building Luau...
 if not exist "%THIRD_PARTY_DIR%\luau\CMakeLists.txt" (
-    echo Initializing Luau submodule...
-    git submodule update --init --recursive "%THIRD_PARTY_DIR%\luau"
+    echo Cloning Luau...
+    mkdir "%THIRD_PARTY_DIR%" 2>nul
+    cd /d "%THIRD_PARTY_DIR%"
+    git clone --depth 1 --branch 0.6.3 https://github.com/luau-lang/luau.git
+    cd /d "%PROJECT_DIR%"
     if errorlevel 1 (
-        echo Failed to initialize Luau submodule
+        echo Failed to clone Luau
         exit /b 1
     )
 )
