@@ -17,7 +17,6 @@ on:
 
 env:
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
 jobs:
   build:
@@ -48,38 +47,23 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        submodules: recursive
         fetch-depth: 0
 
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
 
-    - name: Cache vcpkg
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ env.VCPKG_ROOT }}
-          ${{ env.VCPKG_ROOT }}/installed
-          ~\AppData\Local\vcpkg\archives
-        key: vcpkg-${{ runner.os }}-${{ matrix.config.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
-        restore-keys: |
-          vcpkg-${{ runner.os }}-${{ matrix.config.arch }}-
-
-    - name: Bootstrap vcpkg
+    - name: Use pre-installed vcpkg
       run: |
-        if not exist "%VCPKG_ROOT%\vcpkg.exe" (
-          git clone https://github.com/microsoft/vcpkg "%VCPKG_ROOT%"
-          "%VCPKG_ROOT%\bootstrap-vcpkg.bat" -disableMetrics
-        )
-        # Update to latest
-        cd "%VCPKG_ROOT%" && git pull origin master 2>nul || true
-        "%VCPKG_ROOT%\bootstrap-vcpkg.bat" -disableMetrics
+        # GitHub runners have vcpkg at C:\vcpkg
+        set VCPKG_ROOT=C:\vcpkg
+        echo "VCPKG_ROOT=%VCPKG_ROOT%"
+        "%VCPKG_ROOT%\vcpkg.exe" version
 
-    - name: Install dependencies
+    - name: Install dependencies (fmt, spdlog)
       run: |
-        # Try static first, fallback to dynamic
-        "%VCPKG_ROOT%\vcpkg" install fmt spdlog --triplet x64-windows-static 2>&1 || "%VCPKG_ROOT%\vcpkg" install fmt spdlog --triplet x64-windows
-      # luau not in vcpkg registry - build from source
+        set VCPKG_ROOT=C:\vcpkg
+        # Use dynamic triplet (pre-built binaries available)
+        "%VCPKG_ROOT%\vcpkg.exe" install fmt spdlog --triplet x64-windows
       continue-on-error: false
 
     - name: Fetch Luau source
@@ -95,10 +79,11 @@ jobs:
 
     - name: Configure CMake
       run: |
+        set VCPKG_ROOT=C:\vcpkg
         cmake -B build -S . ^
           -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
           -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+          -DVCPKG_TARGET_TRIPLET=x64-windows ^
           -DLUAU_INCLUDE_DIR="%CD%\third_party\luau\include" ^
           -DLUAU_LIBRARY="%CD%\third_party\luau\build\%BUILD_TYPE%\luau.lib"
 
@@ -157,6 +142,11 @@ jobs:
 
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
+
+    - name: Use pre-installed vcpkg
+      run: |
+        set VCPKG_ROOT=C:\vcpkg
+        "%VCPKG_ROOT%\vcpkg.exe" install fmt spdlog --triplet x64-windows
 
     - name: Run Cppcheck
       run: |

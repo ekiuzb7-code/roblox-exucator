@@ -4,6 +4,7 @@
 
 .DESCRIPTION
     Builds the executor, injector DLL, and benchmarks using CMake and vcpkg.
+    Uses pre-installed vcpkg at C:\vcpkg (GitHub runners) or falls back to local install.
     Supports Debug, Release, and RelWithDebInfo configurations.
 
 .PARAMETER BuildType
@@ -38,7 +39,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectDir = $PSScriptRoot
-$VcpkgDir = Join-Path $ProjectDir 'vcpkg'
+$VcpkgRoot = "C:\vcpkg"
 $ThirdPartyDir = Join-Path $ProjectDir 'third_party'
 $LuauDir = Join-Path $ThirdPartyDir 'luau'
 $BuildDir = Join-Path $ProjectDir 'build'
@@ -57,24 +58,29 @@ function Write-Info($msg) { Write-Host "[INFO] $msg" -ForegroundColor Gray }
 Write-Header "Roblox Executor Build"
 Write-Info "Build Type: $BuildType"
 Write-Info "Project: $ProjectDir"
+Write-Info "Using vcpkg: $VcpkgRoot"
 
-# Check/Install vcpkg
-if (-not (Test-Path "$VcpkgDir\vcpkg.exe")) {
-    Write-Header "Bootstrapping vcpkg"
-    git clone https://github.com/microsoft/vcpkg $VcpkgDir
-    & "$VcpkgDir\bootstrap-vcpkg.bat" -disableMetrics
-    if ($LASTEXITCODE -ne 0) { Write-Error "vcpkg bootstrap failed"; exit $LASTEXITCODE }
-    Write-Success "vcpkg ready"
+# Check for pre-installed vcpkg
+if (-not (Test-Path "$VcpkgRoot\vcpkg.exe")) {
+    Write-Warning "vcpkg not found at $VcpkgRoot, installing locally..."
+    $VcpkgDir = Join-Path $ProjectDir 'vcpkg'
+    if (-not (Test-Path "$VcpkgDir\vcpkg.exe")) {
+        Write-Header "Bootstrapping vcpkg"
+        git clone https://github.com/microsoft/vcpkg $VcpkgDir
+        & "$VcpkgDir\bootstrap-vcpkg.bat" -disableMetrics
+        if ($LASTEXITCODE -ne 0) { Write-Error "vcpkg bootstrap failed"; exit $LASTEXITCODE }
+    }
+    $VcpkgRoot = $VcpkgDir
+    Write-Success "vcpkg ready at $VcpkgRoot"
+} else {
+    Write-Success "Using pre-installed vcpkg at $VcpkgRoot"
 }
 
-# Install dependencies
+# Install dependencies (dynamic triplet - pre-built binaries)
 Write-Header "Installing dependencies"
-& "$VcpkgDir\vcpkg.exe" install fmt spdlog --triplet x64-windows-static
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Static triplet failed, trying dynamic..."
-    & "$VcpkgDir\vcpkg.exe" install fmt spdlog --triplet x64-windows
-    if ($LASTEXITCODE -ne 0) { Write-Warning "vcpkg install had issues, continuing..." }
-}
+& "$VcpkgRoot\vcpkg.exe" install fmt spdlog --triplet x64-windows
+if ($LASTEXITCODE -ne 0) { Write-Error "Failed to install dependencies"; exit $LASTEXITCODE }
+Write-Success "Dependencies installed"
 
 # Build Luau from source
 Write-Header "Building Luau"
@@ -121,8 +127,8 @@ $CMakeArgs = @(
     "-B", $BuildDir
     "-S", $ProjectDir
     "-DCMAKE_BUILD_TYPE=$BuildType"
-    "-DCMAKE_TOOLCHAIN_FILE=$VcpkgDir\scripts\buildsystems\vcpkg.cmake"
-    "-DVCPKG_TARGET_TRIPLET=x64-windows-static"
+    "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot\scripts\buildsystems\vcpkg.cmake"
+    "-DVCPKG_TARGET_TRIPLET=x64-windows"
     "-DLUAU_INCLUDE_DIR=$LuauIncludeDir"
     "-DLUAU_LIBRARY=$LuauLibrary"
 )

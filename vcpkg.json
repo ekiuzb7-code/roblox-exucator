@@ -6,21 +6,17 @@
   "license": "MIT",
   "dependencies": [
     "fmt",
-    "spdlog",
-    {
-      "name": "luau",
-      "version>=": "0.6.0"
-    }
+    "spdlog"
   ],
-  "builtin-baseline": "d8b5c8f2e8b9c4a3f2e1d0c9b8a7f6e5d4c3b2a1",
+  "builtin-baseline": "2024.07.15",
   "overrides": [
     {
       "name": "fmt",
-      "version": "10.2.1"
+      "version": "11.1.0"
     },
     {
       "name": "spdlog",
-      "version": "1.12.0"
+      "version": "1.15.0"
     }
   ]
 }

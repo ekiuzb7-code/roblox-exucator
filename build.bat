@@ -9,41 +9,44 @@ if "%BUILD_TYPE%"=="" set BUILD_TYPE=Release
 
 set CLEAN=%2
 set PROJECT_DIR=%CD%
-set VCPKG_DIR=%PROJECT_DIR%\vcpkg
+set VCPKG_ROOT=C:\vcpkg
 set THIRD_PARTY_DIR=%PROJECT_DIR%\third_party
 
 echo ==========================================
 echo Roblox Executor Build
 echo Build Type: %BUILD_TYPE%
+echo Using vcpkg: %VCPKG_ROOT%
 echo ==========================================
 
-REM Check for vcpkg
-if not exist "%VCPKG_DIR%\vcpkg.exe" (
-    echo Bootstrapping vcpkg...
-    git clone https://github.com/microsoft/vcpkg "%VCPKG_DIR%"
-    if errorlevel 1 (
-        echo Failed to clone vcpkg
-        exit /b 1
+REM Check for pre-installed vcpkg (GitHub runners have it at C:\vcpkg)
+if not exist "%VCPKG_ROOT%\vcpkg.exe" (
+    echo vcpkg not found at %VCPKG_ROOT%, installing locally...
+    set VCPKG_DIR=%PROJECT_DIR%\vcpkg
+    if not exist "%VCPKG_DIR%\vcpkg.exe" (
+        echo Bootstrapping vcpkg...
+        git clone https://github.com/microsoft/vcpkg "%VCPKG_DIR%"
+        if errorlevel 1 (
+            echo Failed to clone vcpkg
+            exit /b 1
+        )
+        "%VCPKG_DIR%\bootstrap-vcpkg.bat" -disableMetrics
+        if errorlevel 1 (
+            echo Failed to bootstrap vcpkg
+            exit /b 1
+        )
     )
-    "%VCPKG_DIR%\bootstrap-vcpkg.bat" -disableMetrics
-    if errorlevel 1 (
-        echo Failed to bootstrap vcpkg
-        exit /b 1
-    )
+    set VCPKG_ROOT=%VCPKG_DIR%
 )
 
-REM Install dependencies
+REM Install dependencies (dynamic triplet - pre-built binaries)
 echo Installing dependencies via vcpkg...
-"%VCPKG_DIR%\vcpkg" install fmt spdlog --triplet x64-windows-static
+"%VCPKG_ROOT%\vcpkg" install fmt spdlog --triplet x64-windows
 if errorlevel 1 (
-    echo Warning: static triplet failed, trying dynamic...
-    "%VCPKG_DIR%\vcpkg" install fmt spdlog --triplet x64-windows
-    if errorlevel 1 (
-        echo Warning: vcpkg install failed, continuing...
-    )
+    echo Failed to install dependencies
+    exit /b 1
 )
 
-REM Build Luau from source (not submodule)
+REM Build Luau from source
 echo Building Luau...
 if not exist "%THIRD_PARTY_DIR%\luau\CMakeLists.txt" (
     echo Cloning Luau...
@@ -89,8 +92,8 @@ if "%CLEAN%"=="clean" (
 
 cmake -B "%PROJECT_DIR%\build" -S "%PROJECT_DIR%" ^
   -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
-  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake" ^
-  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows ^
   -DLUAU_INCLUDE_DIR="%LUAU_INCLUDE_DIR%" ^
   -DLUAU_LIBRARY="%LUAU_LIBRARY%"
 if errorlevel 1 (
